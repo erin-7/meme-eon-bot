@@ -12,12 +12,40 @@ const CONCEPT_ORDER = ['존잼', '진지', '황당', '썰렁', '철학'];
 // captionStyle: 사진 배경 위에 자막을 어떤 스타일로 합성할지 (lib/cardImage.js 참고)
 //   burst = 예능 자막풍 삐죽 말풍선 / bar = 하단 그라데이션 자막바 / plain = 사진 위에 외곽선 글씨만
 const CONCEPT_META = {
-  존잼: { emoji: '😆', label: '존잼', bg: 'FFD400', fg: '111111', desc: '빵 터지는 드립 밈', captionStyle: 'burst' },
-  진지: { emoji: '🧐', label: '진지', bg: '1F3C88', fg: 'FFFFFF', desc: '진심이 담긴 찐 명언', captionStyle: 'bar' },
-  황당: { emoji: '🤯', label: '황당', bg: 'E63946', fg: 'FFFFFF', desc: '이게 맞나 싶은 드립', captionStyle: 'burst' },
-  썰렁: { emoji: '🥶', label: '썰렁', bg: 'A0AEC0', fg: '111111', desc: '정통 아재개그', captionStyle: 'bar' },
-  철학: { emoji: '🏛️', label: '철학', bg: '6B4226', fg: 'FFFFFF', desc: '고대 철학자의 한마디', captionStyle: 'plain' },
+  존잼: {
+    emoji: '😆', label: '존잼', bg: 'FFD400', fg: '111111', desc: '빵 터지는 드립 밈', captionStyle: 'burst',
+    keywords: ['존잼', '웃긴', '웃긴거', '빵터', '개그', '재밌', '재미', '유머', '꿀잼'],
+  },
+  진지: {
+    emoji: '🧐', label: '진지', bg: '1F3C88', fg: 'FFFFFF', desc: '진심이 담긴 찐 명언', captionStyle: 'bar',
+    keywords: ['진지', '위로', '응원', '힘들', '지친', '동기부여', '명언', '진심'],
+  },
+  황당: {
+    emoji: '🤯', label: '황당', bg: 'E63946', fg: 'FFFFFF', desc: '이게 맞나 싶은 드립', captionStyle: 'burst',
+    keywords: ['황당', '팩폭', '팩트폭행', '뼈때', '현실자각', '정색', '어이없', '빡침', '빡쳐'],
+  },
+  썰렁: {
+    emoji: '🥶', label: '썰렁', bg: 'A0AEC0', fg: '111111', desc: '정통 아재개그', captionStyle: 'bar',
+    keywords: ['썰렁', '아재', '아재개그', '드립', '유치'],
+  },
+  철학: {
+    emoji: '🏛️', label: '철학', bg: '6B4226', fg: 'FFFFFF', desc: '고대 철학자의 한마디', captionStyle: 'plain',
+    keywords: ['철학', '명언', '고대', '사색', '생각'],
+  },
 };
+
+// 사용자가 자유 텍스트로 입력한 문장에서 컨셉을 유추합니다.
+// 정확히 "존잼" 같은 단어가 포함돼 있거나, 위 keywords 중 하나라도 포함돼 있으면 매칭.
+function classifyConcept(text) {
+  if (!text) return null;
+  const t = text.replace(/\s+/g, '');
+  for (const concept of CONCEPT_ORDER) {
+    const meta = CONCEPT_META[concept];
+    const words = [concept, ...(meta.keywords || [])];
+    if (words.some((w) => t.includes(w))) return concept;
+  }
+  return null;
+}
 
 // person: 위키피디아에서 초상 이미지를 실시간으로 찾아올 인물 정보 (ko/en 제목)
 const CONTENT = {
@@ -67,4 +95,4 @@ const CONTENT = {
   ],
 };
 
-module.exports = { CONCEPT_ORDER, CONCEPT_META, CONTENT };
+module.exports = { CONCEPT_ORDER, CONCEPT_META, CONTENT, classifyConcept };
