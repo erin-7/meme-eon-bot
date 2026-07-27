@@ -18,8 +18,8 @@
 const express = require('express');
 const path = require('path');
 
-const { CONCEPT_ORDER, CONCEPT_META, CONTENT } = require('./data/content');
-const { simpleText, basicCard, skillResponse, quickReply } = require('./lib/kakao');
+const { CONCEPT_ORDER, CONCEPT_META, CONTENT, classifyConcept } = require('./data/content');
+const { simpleText, basicCard, textCard, messageButton, skillResponse } = require('./lib/kakao');
 const { getSession, touch, markShown, resetConcept } = require('./lib/session');
 const { composeCardImage } = require('./lib/compose');
 const { sendSkillCallback } = require('./lib/kakaoCallback');
@@ -88,26 +88,35 @@ function pickItem(session, concept) {
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
-function conceptQuickReplies() {
+// 이 봇 제품은 Open Builder의 quickReplies(말풍선 아래 칩)를 지원하지 않아서,
+// 실제로 눌리는 버튼은 textCard/basicCard 안의 buttons 뿐입니다. 그래서 선택지는
+// 전부 textCard 버튼으로 제공하고, 혹시 사용자가 버튼 대신 그냥 텍스트로
+// "팩폭", "웃긴거" 처럼 자연스럽게 타이핑해도 classifyConcept()로 알아서 인식합니다.
+function conceptButtons() {
   return CONCEPT_ORDER.map((c) => {
     const m = CONCEPT_META[c];
-    return quickReply(`${m.emoji} ${c}`, c);
+    return messageButton(`${m.emoji} ${c}`, c);
   });
 }
 
-function followUpQuickReplies() {
+function followUpButtons() {
   return [
-    quickReply('🔁 비슷한 밈언 더', CMD.MORE_SAME),
-    quickReply('🔀 다른 컨셉', CMD.OTHER_CONCEPT),
-    quickReply('🆕 다른 기분/상황', CMD.RESET_MOOD),
+    messageButton('🔁 비슷한 밈언 더', CMD.MORE_SAME),
+    messageButton('🔀 다른 컨셉', CMD.OTHER_CONCEPT),
+    messageButton('🆕 다른 기분/상황', CMD.RESET_MOOD),
   ];
 }
 
 function conceptPickerResponse(moodText) {
   const intro = moodText
     ? `"${moodText}" 그런 기분/상황이시군요!\n오늘은 어떤 텐션의 밈언이 필요하세요?`
-    : '오늘 기분이나 상황을 말씀해주셔도 좋고, 아래에서 바로 텐션을 골라도 좋아요!';
-  return skillResponse([simpleText(intro)], conceptQuickReplies());
+    : '오늘 기분이나 상황을 말씀해주셔도 좋고, 아래 버튼으로 바로 텐션을 골라도 좋아요!';
+  const card = textCard({
+    title: '어떤 텐션이 필요하세요?',
+    description: intro,
+    buttons: conceptButtons(),
+  });
+  return skillResponse([card]);
 }
 
 function conceptAnswerResponse(req, session, concept) {
@@ -121,7 +130,13 @@ function conceptAnswerResponse(req, session, concept) {
     thumbnailUrl: thumbnailUrlFor(req, concept, item),
   });
 
-  return skillResponse([card], followUpQuickReplies());
+  const followUp = textCard({
+    title: '다음은 뭐 하실래요?',
+    description: '더 보고 싶으면 아래에서 골라주세요!',
+    buttons: followUpButtons(),
+  });
+
+  return skillResponse([card, followUp]);
 }
 
 // ---- 라우트 ----------------------------------------------------------------
@@ -194,9 +209,13 @@ app.post('/skill', verifySkillSecret, async (req, res) => {
     const session = touch(getSession(userId));
     let response;
 
-    if (CONCEPT_ORDER.includes(utterance)) {
-      session.concept = utterance;
-      response = conceptAnswerResponse(req, session, utterance);
+    const matchedConcept = CONCEPT_ORDER.includes(utterance) ? utterance : classifyConcept(utterance);
+
+    if (matchedConcept) {
+      // 버튼을 눌렀거나("존잼"), 자유 텍스트에 컨셉을 알아볼 수 있는 단어가
+      // 있으면("팩폭이 필요해!") 바로 그 컨셉의 밈언을 보여줍니다.
+      session.concept = matchedConcept;
+      response = conceptAnswerResponse(req, session, matchedConcept);
     } else if (utterance === CMD.MORE_SAME && session.concept) {
       response = conceptAnswerResponse(req, session, session.concept);
     } else if (utterance === CMD.OTHER_CONCEPT) {
@@ -208,7 +227,7 @@ app.post('/skill', verifySkillSecret, async (req, res) => {
         simpleText('좋아요, 처음부터 다시 가볼게요!\n오늘 기분이나 상황을 편하게 말해주세요 🙂'),
       ]);
     } else {
-      // 새로운 기분/상황 입력으로 간주
+      // 컨셉을 못 알아들었으면, 기분/상황으로 저장해두고 버튼으로 골라달라고 요청
       session.mood = utterance || null;
       response = conceptPickerResponse(session.mood);
     }
