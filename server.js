@@ -26,6 +26,10 @@ const { composeCardImage } = require('./lib/compose');
 const app = express();
 app.set('trust proxy', true);
 app.use(express.json({ limit: '1mb' }));
+app.use((req, _res, next) => {
+  console.log(`[요청] ${req.method} ${req.originalUrl}`);
+  next();
+});
 app.use('/memes', express.static(path.join(__dirname, 'public', 'memes')));
 
 const PORT = process.env.PORT || 3000;
@@ -155,6 +159,13 @@ function verifySkillSecret(req, res, next) {
 }
 
 app.post('/skill', verifySkillSecret, (req, res) => {
+  // 요청이 실제로 들어오는지 Render 로그에서 바로 확인할 수 있도록 남겨두는 로그
+  console.log('[skill 요청 수신]', JSON.stringify({
+    utterance: req.body?.userRequest?.utterance,
+    userId: req.body?.userRequest?.user?.id,
+    botId: req.body?.bot?.id,
+    hasSecretHeader: Boolean(req.headers['x-kakao-skill-secret']),
+  }));
   try {
     const utterance = (req.body?.userRequest?.utterance || '').trim();
     const userId = req.body?.userRequest?.user?.id || 'anonymous';
