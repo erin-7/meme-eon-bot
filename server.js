@@ -159,13 +159,8 @@ function verifySkillSecret(req, res, next) {
 }
 
 app.post('/skill', verifySkillSecret, (req, res) => {
-  // 요청이 실제로 들어오는지 Render 로그에서 바로 확인할 수 있도록 남겨두는 로그
-  console.log('[skill 요청 수신]', JSON.stringify({
-    utterance: req.body?.userRequest?.utterance,
-    userId: req.body?.userRequest?.user?.id,
-    botId: req.body?.bot?.id,
-    hasSecretHeader: Boolean(req.headers['x-kakao-skill-secret']),
-  }));
+  // 실제 요청 구조를 정확히 파악하기 위해 전체 바디를 로그에 남긴다 (임시 디버그용)
+  console.log('[skill 요청 원본 바디]', JSON.stringify(req.body));
   try {
     const utterance = (req.body?.userRequest?.utterance || '').trim();
     const userId = req.body?.userRequest?.user?.id || 'anonymous';
