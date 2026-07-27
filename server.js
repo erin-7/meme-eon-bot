@@ -22,6 +22,7 @@ const { CONCEPT_ORDER, CONCEPT_META, CONTENT } = require('./data/content');
 const { simpleText, basicCard, skillResponse, quickReply } = require('./lib/kakao');
 const { getSession, touch, markShown, resetConcept } = require('./lib/session');
 const { composeCardImage } = require('./lib/compose');
+const { sendSkillCallback } = require('./lib/kakaoCallback');
 
 const app = express();
 app.set('trust proxy', true);
@@ -158,14 +159,39 @@ function verifySkillSecret(req, res, next) {
   return next();
 }
 
-app.post('/skill', verifySkillSecret, (req, res) => {
-  // 실제 요청 구조를 정확히 파악하기 위해 전체 바디를 로그에 남긴다 (임시 디버그용)
+// 이 "카카오톡 봇" 제품은 Open Builder와 다르게, 웹훅 요청 자체에 답을 실어 보내지 않습니다.
+// 대신:
+//   1) 웹훅으로 { op, d, t } 형태의 이벤트가 오면 (d.type === 'MESSAGE_CREATE')
+//   2) 우리는 먼저 웹훅에 200으로 "잘 받았다"고만 응답하고
+//   3) d.callbackToken 을 이용해 별도로 POST https://kapi.kakao.com/v1/bot/callback 을
+//      호출해서 실제 답장(SkillResponse)을 전달합니다. (콜백 토큰은 5분 이내에만 유효)
+// 참고: https://developers.kakao.com/docs/in/bot/rest-api#callback-msg-sample-request
+app.post('/skill', verifySkillSecret, async (req, res) => {
   console.log('[skill 요청 원본 바디]', JSON.stringify(req.body));
-  try {
-    const utterance = (req.body?.userRequest?.utterance || '').trim();
-    const userId = req.body?.userRequest?.user?.id || 'anonymous';
-    const session = touch(getSession(userId));
 
+  const evt = req.body || {};
+  const d = evt.d || {};
+  const type = d.type || evt.t;
+
+  // MESSAGE_CREATE가 아닌 다른 이벤트(초대 등)는 일단 ack만 하고 무시합니다.
+  if (type !== 'MESSAGE_CREATE') {
+    return res.sendStatus(200);
+  }
+
+  const utterance = (d.content || '').trim();
+  const userId = d.botUserKey || 'anonymous';
+  const callbackToken = d.callbackToken;
+
+  // 웹훅은 여기서 바로 ack. 실제 답장은 아래에서 콜백 API로 비동기 전송합니다.
+  res.sendStatus(200);
+
+  if (!callbackToken) {
+    console.error('[skill] callbackToken이 없어서 답장을 보낼 수 없습니다:', JSON.stringify(d));
+    return;
+  }
+
+  try {
+    const session = touch(getSession(userId));
     let response;
 
     if (CONCEPT_ORDER.includes(utterance)) {
@@ -187,14 +213,20 @@ app.post('/skill', verifySkillSecret, (req, res) => {
       response = conceptPickerResponse(session.mood);
     }
 
-    res.json(response);
+    await sendSkillCallback(callbackToken, response);
+    console.log('[skill] 콜백 답장 전송 완료:', userId, '->', utterance);
   } catch (err) {
     console.error('[skill error]', err);
-    res.json(
-      skillResponse([
-        simpleText('앗, 밈언을 준비하다가 딸꾹질을 했어요 😵 다시 한 번 말씀해주시겠어요?'),
-      ])
-    );
+    try {
+      await sendSkillCallback(
+        callbackToken,
+        skillResponse([
+          simpleText('앗, 밈언을 준비하다가 딸꾹질을 했어요 😵 다시 한 번 말씀해주시겠어요?'),
+        ])
+      );
+    } catch (cbErr) {
+      console.error('[skill error - 콜백 전송도 실패]', cbErr);
+    }
   }
 });
 
