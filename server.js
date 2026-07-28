@@ -18,7 +18,7 @@
 const express = require('express');
 const path = require('path');
 
-const { CONCEPT_ORDER, CONCEPT_META, CONTENT, classifyConcept } = require('./data/content');
+const { CONCEPT_ORDER, CONCEPT_META, CONTENT, classifyConcept, matchesMood } = require('./data/content');
 const { simpleText, basicCard, textCard, messageButton, skillResponse } = require('./lib/kakao');
 const { getSession, touch, markShown, resetConcept } = require('./lib/session');
 const { composeCardImage } = require('./lib/compose');
@@ -85,6 +85,14 @@ function pickItem(session, concept) {
     resetConcept(session, concept);
     candidates = pool;
   }
+
+  // 사용자가 말한 기분/상황(session.mood)에 태그가 맞는 항목이 있으면 그 중에서 우선 선택
+  // (예: "스트레스 받아" -> moodTags에 '스트레스'가 있는 항목을 먼저 고려)
+  if (session.mood) {
+    const tagged = candidates.filter((it) => matchesMood(it, session.mood));
+    if (tagged.length) candidates = tagged;
+  }
+
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
@@ -209,12 +217,19 @@ app.post('/skill', verifySkillSecret, async (req, res) => {
     const session = touch(getSession(userId));
     let response;
 
-    const matchedConcept = CONCEPT_ORDER.includes(utterance) ? utterance : classifyConcept(utterance);
+    const isExplicitConceptButton = CONCEPT_ORDER.includes(utterance);
+    const matchedConcept = isExplicitConceptButton ? utterance : classifyConcept(utterance);
 
     if (matchedConcept) {
       // 버튼을 눌렀거나("존잼"), 자유 텍스트에 컨셉을 알아볼 수 있는 단어가
       // 있으면("팩폭이 필요해!") 바로 그 컨셉의 밈언을 보여줍니다.
       session.concept = matchedConcept;
+      if (!isExplicitConceptButton) {
+        // 자유 텍스트로 컨셉을 골랐다면 그 문장 자체를 기분/상황으로도 기억해서
+        // pickItem()의 moodTags 매칭에 활용합니다. 버튼을 그냥 누른 경우엔 그 전에
+        // 입력했던 진짜 기분/상황(session.mood)을 그대로 유지합니다.
+        session.mood = utterance;
+      }
       response = conceptAnswerResponse(req, session, matchedConcept);
     } else if (utterance === CMD.MORE_SAME && session.concept) {
       response = conceptAnswerResponse(req, session, session.concept);
