@@ -80,19 +80,44 @@ function thumbnailUrlFor(req, concept, item) {
 function pickItem(session, concept) {
   const pool = CONTENT[concept] || [];
   const shown = session.shownIds[concept] || [];
+
+  // 사용자가 말한 기분/상황(session.mood)에 맞는 항목이 이 컨셉 안에 있는지 먼저,
+  // "이미 보여준 것" 필터를 적용하기 전에 통째로 확인합니다. (예: "창피했어" -> 창피부끄러움)
+  // 이렇게 해야 "비슷한 밈언 더"를 여러 번 눌러서 그 카테고리 항목을 다 보여준 뒤에도
+  // 엉뚱한 "범용"/랜덤 카테고리로 새지 않고, 같은 주제 안에서 돌려가며 계속 보여줄 수 있습니다.
+  if (session.mood) {
+    const moodPool = pool.filter((it) => matchesMood(it, session.mood));
+    if (moodPool.length) {
+      let candidates = moodPool.filter((it) => !shown.includes(it.id));
+      if (candidates.length === 0) {
+        // 이 기분 카테고리 항목을 이미 다 보여줬으면, 컨셉 전체가 아니라 이 카테고리 안에서만
+        // "본 것"을 리셋하고 다시 돌려가며 보여줍니다 (엉뚱한 주제로 새지 않도록).
+        session.shownIds[concept] = shown.filter((id) => !moodPool.some((it) => it.id === id));
+        candidates = moodPool;
+      }
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    // 이 컨셉 안에 구체적인 카테고리와 맞는 항목이 아예 없을 때만(=아직 못 알아듣는 표현이어도),
+    // "배고픔" 얘기에 "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 합니다.
+    // 그래서 어떤 상황에 갖다 붙여도 안전한 "범용" 태그 항목을 우선 사용합니다.
+    const universalPool = pool.filter((it) => it.moodTags && it.moodTags.includes('범용'));
+    if (universalPool.length) {
+      let candidates = universalPool.filter((it) => !shown.includes(it.id));
+      if (candidates.length === 0) {
+        session.shownIds[concept] = shown.filter((id) => !universalPool.some((it) => it.id === id));
+        candidates = universalPool;
+      }
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+  }
+
+  // mood 태그가 아예 없거나(다른 컨셉 고르기 등) 이 컨셉엔 관련/범용 항목이 하나도 없을 때: 전체 랜덤
   let candidates = pool.filter((it) => !shown.includes(it.id));
   if (candidates.length === 0) {
     resetConcept(session, concept);
     candidates = pool;
   }
-
-  // 사용자가 말한 기분/상황(session.mood)에 태그가 맞는 항목이 있으면 그 중에서 우선 선택
-  // (예: "스트레스 받아" -> moodTags에 '스트레스'가 있는 항목을 먼저 고려)
-  if (session.mood) {
-    const tagged = candidates.filter((it) => matchesMood(it, session.mood));
-    if (tagged.length) candidates = tagged;
-  }
-
   return candidates[Math.floor(Math.random() * candidates.length)];
 }
 
