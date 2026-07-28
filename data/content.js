@@ -198,6 +198,8 @@ const CONTENT = {
     { id: 'jj29', quote: '심심하다는 건 뇌가 새로고침을 기다리고 있다는 뜻이다, 일단 냉장고부터 열어봐', source: '오늘의 밈언 자체 제작', moodTags: ['지루함'], stockQuery: 'bored person couch' },
     { id: 'jj30', quote: '창피한 기억은 사실 나만 기억한다, 남들은 이미 다 잊었다', source: '오늘의 밈언 자체 제작', moodTags: ['창피부끄러움'], stockQuery: 'embarrassed face palm' },
     { id: 'jj54', quote: '길에서 넘어졌을 때 제일 중요한 건 안 아픈 척 자연스럽게 일어나서 아무 일도 없었다는 듯 걷는 연기력이다', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['창피부끄러움'], stockQuery: 'person tripping falling street' },
+    { id: 'jj55', quote: '넘어지고 나서 제일 먼저 하는 생각은 "아프다"가 아니라 "본 사람 있나"다', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['창피부끄러움'], stockQuery: 'person looking around embarrassed street' },
+    { id: 'jj56', quote: '흑역사는 시간이 지나면 무뎌지는 게 아니라, 그냥 새로운 흑역사가 생겨서 순위가 밀리는 거다', source: '오늘의 밈언 자체 제작', moodTags: ['창피부끄러움'], stockQuery: 'facepalm embarrassed cringe' },
     { id: 'jj31', quote: '뻔뻔함은 재능이다, 그 재능 그대로 밀고 나가라', source: '오늘의 밈언 자체 제작', moodTags: ['뻔뻔함'], stockQuery: 'confident person smirk' },
     // 아래부터는 이번에 추가한 감정 카테고리(기쁨/슬픔/분노/두려움/놀람/혐오/수치심/
     // 무기력/자신감 계열) 전용 카드들입니다.
