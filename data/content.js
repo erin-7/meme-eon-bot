@@ -334,4 +334,269 @@ const CONTENT = {
   ],
 };
 
-module.exports = { CONCEPT_ORDER, CONCEPT_META, CONTENT, classifyConcept, matchesMood, detectMoodCategories };
+// ---------------------------------------------------------------------------
+// 즉석 밈언 생성기 ("비슷한 밈언 더"를 아무리 눌러도 몇 개 안 되는 큐레이션 문구만
+// 계속 반복되는 것을 막기 위한 조합형 생성기)
+//
+// 원리: "문장 틀(frame)" + "상황 조각(a)" + "펀치라인 조각(b)"을 각각 여러 개씩 만들어두고
+// 무작위로 조합한다. 카테고리별로 4~6개씩만 준비해도 frame 8개 x a 5개 x b 5개 = 200개
+// 조합이 나오기 때문에, 한 세션 안에서는 사실상 반복이 거의 안 보인다.
+// 큐레이션된 명문장(CONTENT)과 섞어서 보여주므로, 품질 좋은 손맛 문구 + 무한에 가까운 변주가
+// 함께 나온다. 카테고리별 전용 조각이 없는 감정도 아래 "범용 조합"으로 커버되므로
+// 49개 카테고리 전부 무한 변주가 가능하다.
+
+// 주의: a 조각은 전부 "-(으)ㄹ/-(으)ㄴ" 관형형(예: '너무 창피할', '기분이 바닥을 칠')으로
+// 통일해서 작성돼 있다. 그래서 모든 frame은 항상 "${a} 때"로 시작해야 문법이 안 깨진다
+// (예전엔 frame마다 다른 조사를 붙였다가 "너무 창피할보다 무서운 건..." 같은 비문이 나왔음).
+// b 조각은 전부 명사(구)라서 끝에 "다"만 붙이면 받침 있는 단어에서 "~력다/~함다"처럼 깨지므로
+// 반드시 "이다"를 붙인다(받침 없는 단어에 "이다"를 붙여도 항상 문법적으로 맞다).
+const GENERATOR_FRAMES = [
+  (a, b) => `${a} 때 제일 중요한 건 ${b}이다`,
+  (a, b) => `${a} 때 사실 필요한 건 ${b}이다`,
+  (a, b) => `${a} 때, 진짜 문제는 ${b}이다`,
+  (a, b) => `${a} 때 뇌가 제일 먼저 하는 일은 ${b}이다`,
+  (a, b) => `${a} 때보다 무서운 건 ${b}이다`,
+  (a, b) => `${a} 때 남는 건 결국 ${b}뿐이다`,
+  (a, b) => `${a} 때, 그건 사실 ${b} 신호다`,
+  (a, b) => `${a} 때 몸이 제일 먼저 아는 건 ${b}이다`,
+  (a, b) => `${a} 때 들키지 않는 방법은 ${b}밖에 없다`,
+];
+
+// 카테고리 전용 조각이 없을 때 쓰는 "범용 조합" 틀 - 사용자가 실제로 말한 문장을
+// 그대로 인용해서 앵커로 삼기 때문에 어떤 감정/상황이 와도 맥락이 크게 벗어나지 않는다.
+// (이/가, 으로/로처럼 받침에 따라 조사가 바뀌는 표현은 b 바로 뒤에 붙이지 않도록 설계함)
+const ANCHOR_FRAMES = [
+  (mood, b) => `"${mood}"라고 할 때 제일 필요한 건 ${b}이다`,
+  (mood, b) => `"${mood}" — 그럴 때일수록 필요한 건 ${b}이다`,
+  (mood, b) => `"${mood}", 그런 기분엔 결국 필요한 건 ${b}이다`,
+  (mood, b) => `"${mood}"도 결국 남는 건 ${b}이다`,
+  (mood, b) => `"${mood}"라고 말할 때 사람들이 진짜 원하는 건 ${b}이다`,
+];
+
+const GENERIC_B_POOL = [
+  '아무 생각 없이 침대에 눕는 것',
+  '일단 자고 일어나서 생각하는 태도',
+  '결국 배달 앱부터 켜는 손가락',
+  '아무 일도 없었다는 듯 넘어가는 연기력',
+  '이불킥 한 번으로 퉁치는 마음가짐',
+  '괜히 핸드폰만 만지작거리는 것',
+  '내일이 되면 또 까먹는 기억력',
+  '다 지나간다는 어른들 말이 은근 맞다는 것',
+  '그냥 오늘 하루 잘 버틴 나 자신 칭찬하기',
+  '괜히 SNS에 의미심장한 글 하나 올리는 것',
+  '결국 시간이 해결해준다는 뻔한 진리',
+  '초콜릿 하나로 퉁치려는 마음',
+];
+
+// 카테고리별 전용 조각(있으면 훨씬 더 그 상황에 딱 맞는 문장이 나온다)
+const CATEGORY_FILLERS = {
+  기쁨행복: {
+    a: ['진짜 행복할', '기분이 최고일', '오랜만에 웃음이 터질', '모든 게 잘 풀릴'],
+    b: ['이 순간을 사진으로 남기고 싶은 마음', '아무한테나 자랑하고 싶은 충동', '내일 걱정은 잠깐 미뤄두는 여유', '이 기분 오래 못 간다는 걸 아는 씁쓸함'],
+  },
+  설렘기대: {
+    a: ['내일이 기대될', '두근두근 설렐', '약속 날짜만 세고 있을'],
+    b: ['괜히 옷장 앞에서 고민하는 시간', '아무 이유 없이 웃는 얼굴', '미리 스포일러 찾아보고 싶은 충동', '잠이 안 와서 눈만 말똥말똥한 것'],
+  },
+  만족감: {
+    a: ['오늘 할 일을 다 끝냈을', '기대 이상으로 잘 됐을'],
+    b: ['혼자 흐뭇하게 웃는 것', '아무도 안 물어봤는데 자랑하고 싶은 마음', '오늘만큼은 야식 먹어도 되는 이유'],
+  },
+  감사함: {
+    a: ['누군가 도와줬을', '뜻밖에 챙김을 받았을'],
+    b: ['말로는 다 못 하는 마음', '언젠가 꼭 갚아야겠다는 다짐', '그 사람 이름을 오래 기억하는 것'],
+  },
+  기분나쁨: {
+    a: ['기분이 바닥을 칠', '이유 없이 다 짜증 날', '괜히 다 마음에 안 들'],
+    b: ['일단 아무 말도 하지 않는 것', '단 걸로 응급 처치하는 것', '내일의 나에게 다 떠넘기는 것', '누구 탓인지부터 찾는 마음'],
+  },
+  허무함: {
+    a: ['다 부질없게 느껴질', '열심히 했는데 남는 게 없을'],
+    b: ['그냥 멍하니 천장 보는 것', '의미를 찾다가 포기하는 것', '내일은 또 내일의 내가 감당하는 것'],
+  },
+  그리움: {
+    a: ['옛날 생각이 날', '그 사람이 문득 생각날'],
+    b: ['연락할까 말까 손가락만 왔다갔다 하는 것', '사진첩을 몰래 뒤지는 것', '결국 아무 말도 안 보내는 것'],
+  },
+  스트레스짜증: {
+    a: ['스트레스가 머리끝까지 찰', '뭐만 하면 짜증부터 날'],
+    b: ['일단 소리부터 지르고 싶은 충동', '매운 거 찾게 되는 손', '아무 죄 없는 핸드폰만 던지고 싶은 마음'],
+  },
+  분노: {
+    a: ['진짜 화가 날', '눈이 돌아갈 정도로 화날'],
+    b: ['일단 심호흡부터 하는 것', '나중에 후회할 말은 참는 것', '그 사람 이름만 봐도 열받는 것'],
+  },
+  억울함: {
+    a: ['나만 억울할', '분명 내 잘못이 아닐'],
+    b: ['혼자 사건 경위서를 써보는 것', '누구한테라도 하소연하고 싶은 마음', '결국 나만 참는 게 제일 빠른 길이라는 것'],
+  },
+  질투시기: {
+    a: ['남 부러운 게 유독 심할', '나만 뒤처진 것 같을'],
+    b: ['겉으론 축하한다고 말하는 연기력', '몰래 그 사람 SNS 정주행 하는 것', '나도 할 수 있다고 되뇌는 것'],
+  },
+  불안긴장: {
+    a: ['괜히 불안할', '심장이 벌렁거릴', '발표 직전일'],
+    b: ['화장실을 괜히 한 번 더 가는 것', '별일 아닐 거라고 되뇌는 것', '핸드폰만 자꾸 확인하는 손'],
+  },
+  두려움공포: {
+    a: ['너무 무서울', '겁이 날'],
+    b: ['눈을 질끈 감아버리는 것', '아무렇지 않은 척하는 표정 관리', '누군가 옆에 있어주길 바라는 마음'],
+  },
+  초조함: {
+    a: ['마음이 조급할', '시간에 쫓길'],
+    b: ['다리를 떠는 것', '시계만 자꾸 쳐다보는 것', '괜히 서두르다 더 실수하는 것'],
+  },
+  놀라움: {
+    a: ['너무 놀랄', '전혀 예상 못 했을'],
+    b: ['말이 안 나오는 것', '그 자리에서 얼어붙는 것', '누구한테라도 당장 말하고 싶은 마음'],
+  },
+  당황난처: {
+    a: ['당황스러울', '어떻게 반응해야 할지 모를'],
+    b: ['일단 어색하게 웃는 것', '못 들은 척하는 연기력', '화제를 재빨리 돌리는 순발력'],
+  },
+  혐오지겨움: {
+    a: ['진짜 지겨울', '이제 질릴 대로 질릴'],
+    b: ['한숨부터 나오는 것', '더는 못 참겠다는 표정', '그냥 자리를 피해버리는 것'],
+  },
+  창피부끄러움: {
+    a: ['너무 창피할', '얼굴이 화끈거릴', '쥐구멍이라도 찾고 싶을'],
+    b: ['아무 일도 없었다는 듯 걷는 연기력', '기억을 지우고 싶은 마음', '다음에 또 생각나서 이불킥 하는 것'],
+  },
+  죄책감후회: {
+    a: ['괜히 미안할', '그때 그러지 말걸 싶을'],
+    b: ['혼자 계속 곱씹는 것', '사과할 타이밍만 재는 것', '다음엔 진짜 안 그러겠다는 다짐'],
+  },
+  지루함: {
+    a: ['할 일이 없어 심심할', '시간이 안 갈'],
+    b: ['핸드폰만 계속 새로고침 하는 것', '괜히 방 정리를 시작하는 것', '아무 의미 없이 시계만 보는 것'],
+  },
+  무기력번아웃: {
+    a: ['아무것도 하기 싫을', '에너지가 하나도 없을'],
+    b: ['그냥 누워만 있는 것', '내일의 나에게 다 미루는 것', '뭘 해도 의미 없게 느껴지는 것'],
+  },
+  피곤졸림: {
+    a: ['너무 졸릴', '눈이 자꾸 감길'],
+    b: ['커피로 버텨보는 것', '눈꺼풀과 사투를 벌이는 것', '결국 알람을 못 듣고 늦잠 자는 것'],
+  },
+  귀찮미루: {
+    a: ['하기 싫을', '자꾸 미루고 싶을'],
+    b: ['내일의 나에게 떠넘기는 것', '일단 눕는 게 먼저인 것', '핑계부터 찾는 것'],
+  },
+  뻔뻔함: {
+    a: ['뻔뻔하게 나갈', '민폐인 걸 알면서도 그냥 할'],
+    b: ['일단 당당한 표정부터 짓는 것', '모르는 척 시치미 떼는 것', '철판을 깔고 버티는 것'],
+  },
+  자신감자부심: {
+    a: ['자신감이 넘칠', '이번엔 진짜 잘될 것 같을'],
+    b: ['어깨를 펴고 걷는 것', '괜히 다 해낼 수 있을 것 같은 기분', '실패해도 다음이 있다는 여유'],
+  },
+  배고픔: {
+    a: ['배가 너무 고플', '뭐라도 먹어야 할'],
+    b: ['일단 냉장고부터 열어보는 것', '배달 앱을 켜는 손', '결국 아무거나 시켜 먹는 것'],
+  },
+  월요일출근: {
+    a: ['월요일이라 우울할', '출근길이 유독 멀 것 같을'],
+    b: ['주말만 그리워하는 마음', '알람을 다섯 번 미루는 것', '커피부터 찾는 손'],
+  },
+  다이어트: {
+    a: ['다이어트가 자꾸 무너질', '먹고 후회할'],
+    b: ['내일부터 진짜 시작이라는 다짐', '운동 앱만 깔아두는 것', '거울을 살짝 피하는 것'],
+  },
+  실패좌절: {
+    a: ['일이 마음처럼 안 풀릴', '또 실패할'],
+    b: ['일단 하루 정도 쉬어가는 것', '이번 경험도 데이터라고 되뇌는 것', '다시 도전할 힘을 아껴두는 것'],
+  },
+  관계위로: {
+    a: ['사람 관계가 힘들', '혼자인 것 같이 느껴질'],
+    b: ['괜히 연락처 목록을 스크롤하는 것', '먼저 연락해볼까 고민하는 것', '결국 나 자신이 제일 편하다는 것'],
+  },
+  시간고민: {
+    a: ['시간이 너무 빠듯할', '할 일은 많은데 시간이 없을'],
+    b: ['일단 급한 것부터 처리하는 것', '우선순위를 다시 짜보는 것', '괜히 시간 탓만 하는 것'],
+  },
+};
+
+// 생성된 문장에 붙일 스톡 사진 검색어 - 카테고리별로 여러 개를 준비해서 이미지도 매번 달라지게 함
+const STOCK_QUERY_POOL = {
+  기쁨행복: ['happy person smiling', 'celebration confetti joy'],
+  설렘기대: ['excited person anticipation', 'butterflies excitement'],
+  만족감: ['satisfied content person', 'relaxed happy person'],
+  감사함: ['thankful gratitude hands', 'thank you gesture'],
+  기분나쁨: ['upset frustrated person', 'bad mood person sighing'],
+  허무함: ['empty feeling person staring', 'blank stare person'],
+  그리움: ['nostalgic person looking away', 'missing someone longing'],
+  스트레스짜증: ['stressed person frustrated', 'annoyed person office'],
+  분노: ['angry person frustrated', 'furious person shouting'],
+  억울함: ['unfair frustrated person', 'wronged person upset'],
+  질투시기: ['jealous person side eye', 'envy person looking'],
+  불안긴장: ['anxious nervous person', 'nervous person waiting'],
+  두려움공포: ['scared frightened person', 'fear person covering eyes'],
+  초조함: ['impatient person watching clock', 'restless person waiting'],
+  놀라움: ['shocked surprised person', 'surprised face person'],
+  당황난처: ['confused embarrassed person', 'awkward person unsure'],
+  혐오지겨움: ['disgusted tired person', 'bored annoyed person'],
+  창피부끄러움: ['embarrassed face palm', 'person tripping falling street'],
+  죄책감후회: ['regretful person thinking', 'guilty person apologizing'],
+  지루함: ['bored person yawning', 'bored person staring at clock'],
+  무기력번아웃: ['exhausted burnout person', 'lying down tired person'],
+  피곤졸림: ['sleepy tired person yawning', 'person falling asleep desk'],
+  귀찮미루: ['lazy person couch', 'procrastinating person phone'],
+  뻔뻔함: ['confident shameless person', 'smug person shrugging'],
+  자신감자부심: ['confident proud person', 'person standing tall confident'],
+  배고픔: ['hungry person looking at food', 'person opening fridge'],
+  월요일출근: ['tired office worker monday', 'commuter tired morning'],
+  다이어트: ['fitness diet person', 'person exercising gym'],
+  실패좌절: ['disappointed person sitting', 'discouraged person head down'],
+  관계위로: ['lonely person comfort', 'friends supporting each other'],
+  시간고민: ['busy person checking watch', 'person rushing time pressure'],
+};
+
+const DEFAULT_STOCK_QUERIES = [
+  'funny reaction face',
+  'person shrugging confused',
+  'person sighing tired',
+  'relatable everyday life moment',
+];
+
+function pick(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+// category(감정 카테고리) + moodText(사용자가 실제로 한 말) 을 받아서 즉석 문장을 하나 만든다.
+// avoidTexts(Set)에 있는 문장은 최대한 피해서, 같은 세션 안에서 방금 봤던 문장이 또 나오지 않게 한다.
+function generateQuote(category, moodText, avoidTexts) {
+  const fillers = CATEGORY_FILLERS[category];
+  const avoid = avoidTexts || new Set();
+
+  for (let tries = 0; tries < 25; tries++) {
+    let text;
+    if (fillers) {
+      const frame = pick(GENERATOR_FRAMES);
+      text = frame(pick(fillers.a), pick(fillers.b));
+    } else {
+      const frame = pick(ANCHOR_FRAMES);
+      text = frame(moodText || '이 기분', pick(GENERIC_B_POOL));
+    }
+    if (!avoid.has(text)) return text;
+  }
+  // 25번 시도해도 다 겹치면(사실상 거의 불가능) 그냥 마지막 생성 결과를 그대로 반환
+  return fillers
+    ? GENERATOR_FRAMES[0](pick(fillers.a), pick(fillers.b))
+    : ANCHOR_FRAMES[0](moodText || '이 기분', pick(GENERIC_B_POOL));
+}
+
+function pickStockQuery(category) {
+  const pool = STOCK_QUERY_POOL[category];
+  return pick(pool && pool.length ? pool : DEFAULT_STOCK_QUERIES);
+}
+
+module.exports = {
+  CONCEPT_ORDER,
+  CONCEPT_META,
+  CONTENT,
+  classifyConcept,
+  matchesMood,
+  detectMoodCategories,
+  generateQuote,
+  pickStockQuery,
+};
