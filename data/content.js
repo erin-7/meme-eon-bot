@@ -1,8 +1,15 @@
 // data/content.js
 // "오늘의 밈언" 콘텐츠 데이터베이스
-// - 존잼 / 황당 / 썰렁: 100% 자체 제작 컬러 카드(외부 이미지 네트워크 호출 없음 -> 항상 즉시, 안정적으로 렌더링)
+// - 존잼 / 황당 / 썰렁: 주제에 맞는 무료 CC 라이선스 스톡 사진(Openverse)을 배경으로 쓰고,
+//   그 위에 자막을 합성합니다(lib/compose.js의 tryStockPhoto). 사진 조회는 3.5초 시간 예산
+//   안에서만 시도하고, 실패/지연 시 즉시 자체 제작 컬러 카드로 대체하므로 항상 빠르고
+//   안정적으로 응답이 나갑니다. (템플릿 밈 항목들은 사진 없이 100% 직접 그린 벡터입니다.)
 // - 진지 / 철학: 실존 인물의 유명한 어록 + 위키피디아에서 실시간으로 가져오는 초상 이미지
-//   (인물 사진은 lib/compose.js에서 엄격한 타임아웃을 두고, 실패/지연 시 즉시 컬러 카드로 대체합니다)
+//   (인물 사진도 동일하게 엄격한 타임아웃을 두고, 실패/지연 시 즉시 컬러 카드로 대체합니다)
+//
+// stockQuery: Openverse(무료/CC 라이선스 스톡 이미지 검색)에 보낼 검색어. 한국어보다 영어
+// 검색어가 결과가 훨씬 풍부해서 영어로 넣습니다. 사진에는 항상 작가명(크레딧)이 자동으로
+// 자막에 함께 표기됩니다(lib/compose.js 참고).
 //
 // 실제 방송 캡처짤(무한도전 등)을 쓰고 싶다면 저작권 문제 없이 본인이 보유한 이미지를
 // public/memes/ 폴더에 넣고 아래 항목에 imageUrl(로컬 경로, 예: "/memes/jj1.jpg")을 직접
@@ -108,28 +115,29 @@ function matchesMood(item, moodText) {
 }
 
 // person: 위키피디아에서 초상 이미지를 실시간으로 찾아올 인물 정보 (ko/en 제목)
+// stockQuery: Openverse에서 찾아올 CC 라이선스 스톡 사진 검색어 (영어)
 const CONTENT = {
-  // 존잼: 전부 외부 네트워크 없이 서버가 즉시 그려내는 컬러 카드입니다 (빠르고 100% 안정적).
   존잼: [
-    { id: 'jj1', quote: '늦었다고 생각할 때가 이미 늦은 거다', source: '박명수 (무한도전 어록)', moodTags: ['지각약속'] },
-    { id: 'jj7', quote: '티끌 모아 티끌', source: '박명수 (무한도전 어록)', moodTags: ['돈절약'] },
-    { id: 'jj2', quote: '포기하면 편해', source: '국룰 짤방 명언', moodTags: ['포기도전', '귀찮미루'] },
-    { id: 'jj3', quote: '인생은 실전이다, 연습 경기는 없다', source: '인터넷 밈', moodTags: ['불안긴장', '공부시험'] },
-    { id: 'jj4', quote: '그래, 다 계획이 있구나', source: '영화 명대사 패러디', moodTags: ['계획음모'] },
-    { id: 'jj5', quote: '아 몰라, 일단 저지르고 보자', source: '오늘의 밈언 자체 제작', moodTags: ['고민결정'] },
-    { id: 'jj6', quote: '분위기 파악은 못해도 눈치는 안 봐', source: 'MZ 어록', moodTags: ['눈치상황'] },
-    { id: 'jj10', quote: '점심 먹은 지 한 시간밖에 안 지났다고? 그럼 지금은 저녁이라고 생각해', source: '오늘의 밈언 자체 제작', moodTags: ['배고픔'] },
-    { id: 'jj11', quote: '월요일이 싫은 게 아니라 일하는 게 싫은 거다, 정확하게 알아두자', source: '직장인 어록', moodTags: ['월요일출근'] },
-    { id: 'jj12', quote: '스트레스 받을 땐 일단 숨을 크게 쉬어라, 숨 쉬는 것도 스트레스면 그건 나도 모른다', source: '오늘의 밈언 자체 제작', moodTags: ['스트레스짜증'] },
-    { id: 'jj13', quote: '야근은 하루의 마지막까지 최선을 다하는 게 아니라, 그냥 야근이다', source: '직장인 어록', moodTags: ['야근퇴근'] },
-    { id: 'jj14', quote: '다이어트는 내일부터, 오늘은 준비운동 기간이다', source: '국룰 짤방 명언', moodTags: ['다이어트'] },
-    { id: 'jj15', quote: '퇴 사', source: '오늘의 밈언 자체 제작 · 직장인 만국 공통 정답', moodTags: ['월요일출근', '스트레스짜증', '야근퇴근'] },
-    { id: 'jj16', quote: '그만두는 상상은 무료입니다', source: '직장인 어록', moodTags: ['월요일출근', '포기도전'] },
+    { id: 'jj1', quote: '늦었다고 생각할 때가 이미 늦은 거다', source: '박명수 (무한도전 어록)', moodTags: ['지각약속'], stockQuery: 'alarm clock running late' },
+    { id: 'jj7', quote: '티끌 모아 티끌', source: '박명수 (무한도전 어록)', moodTags: ['돈절약'], stockQuery: 'piggy bank coins saving' },
+    { id: 'jj2', quote: '포기하면 편해', source: '국룰 짤방 명언', moodTags: ['포기도전', '귀찮미루'], stockQuery: 'tired person lying down' },
+    { id: 'jj3', quote: '인생은 실전이다, 연습 경기는 없다', source: '인터넷 밈', moodTags: ['불안긴장', '공부시험'], stockQuery: 'student exam stress' },
+    { id: 'jj4', quote: '그래, 다 계획이 있구나', source: '영화 명대사 패러디', moodTags: ['계획음모'], stockQuery: 'planning notebook desk' },
+    { id: 'jj5', quote: '아 몰라, 일단 저지르고 보자', source: '오늘의 밈언 자체 제작', moodTags: ['고민결정'], stockQuery: 'person thinking decision' },
+    { id: 'jj6', quote: '분위기 파악은 못해도 눈치는 안 봐', source: 'MZ 어록', moodTags: ['눈치상황'], stockQuery: 'awkward silence people' },
+    { id: 'jj10', quote: '점심 먹은 지 한 시간밖에 안 지났다고? 그럼 지금은 저녁이라고 생각해', source: '오늘의 밈언 자체 제작', moodTags: ['배고픔'], stockQuery: 'fried chicken food' },
+    { id: 'jj11', quote: '월요일이 싫은 게 아니라 일하는 게 싫은 거다, 정확하게 알아두자', source: '직장인 어록', moodTags: ['월요일출근'], stockQuery: 'tired office monday morning' },
+    { id: 'jj12', quote: '스트레스 받을 땐 일단 숨을 크게 쉬어라, 숨 쉬는 것도 스트레스면 그건 나도 모른다', source: '오늘의 밈언 자체 제작', moodTags: ['스트레스짜증'], stockQuery: 'stressed office worker' },
+    { id: 'jj13', quote: '야근은 하루의 마지막까지 최선을 다하는 게 아니라, 그냥 야근이다', source: '직장인 어록', moodTags: ['야근퇴근'], stockQuery: 'office late night work' },
+    { id: 'jj14', quote: '다이어트는 내일부터, 오늘은 준비운동 기간이다', source: '국룰 짤방 명언', moodTags: ['다이어트'], stockQuery: 'diet salad healthy food' },
+    { id: 'jj15', quote: '퇴 사', source: '오늘의 밈언 자체 제작 · 직장인 만국 공통 정답', moodTags: ['월요일출근', '스트레스짜증', '야근퇴근'], stockQuery: 'office desk resignation' },
+    { id: 'jj16', quote: '그만두는 상상은 무료입니다', source: '직장인 어록', moodTags: ['월요일출근', '포기도전'], stockQuery: 'daydreaming office window' },
     // 배고픔/식욕 관련 상황에 바로 나가는 "팩폭" 존잼 카드들
-    { id: 'jj22', quote: '응, 음식은 살 안 쪄~ 살은 너가 찌는 거지', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['배고픔', '다이어트'] },
-    { id: 'jj23', quote: '먹어도 되냐고 물어본 순간, 이미 마음속으로는 다 먹기로 결정 났다', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['배고픔'] },
-    { id: 'jj24', quote: '지금 참으면 30분 뒤에 더 배고파서 두 그릇 먹는다, 그냥 지금 먹어', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['배고픔'] },
+    { id: 'jj22', quote: '응, 음식은 살 안 쪄~ 살은 너가 찌는 거지', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['배고픔', '다이어트'], stockQuery: 'fried chicken fast food' },
+    { id: 'jj23', quote: '먹어도 되냐고 물어본 순간, 이미 마음속으로는 다 먹기로 결정 났다', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['배고픔'], stockQuery: 'eating food table' },
+    { id: 'jj24', quote: '지금 참으면 30분 뒤에 더 배고파서 두 그릇 먹는다, 그냥 지금 먹어', source: '오늘의 밈언 (팩폭 밈)', moodTags: ['배고픔'], stockQuery: 'delicious food craving' },
     // 아래부터는 "진짜 밈 포맷"(직접 그린 얼굴/아이콘 + 레이아웃, 저작권 프리) 항목들입니다.
+    // 사진 대신 벡터로 직접 그리므로 stockQuery가 필요 없습니다.
     {
       id: 'jj17', template: 'macro', mood: 'shock',
       topText: '팀장이 "잠깐 얘기 좀 할까?"', bottomText: '나 (심장 쿵)',
@@ -158,18 +166,17 @@ const CONTENT = {
       moodTags: ['스트레스짜증', '월요일출근'],
     },
   ],
-  // 황당: 존잼과 마찬가지로 전부 즉시 렌더링되는 컬러 카드입니다.
   황당: [
-    { id: 'hd1', quote: '물고기는 물을 마시지 않는다, 물에 살 뿐이다', source: '아무말 대잔치' },
-    { id: 'hd2', quote: '지구가 둥근 이유는 네모나면 모서리에서 넘어지기 때문이다', source: '아무말 대잔치' },
-    { id: 'hd3', quote: '고양이가 상자를 좋아하는 이유는 상자가 고양이를 좋아하기 때문이다', source: '아무말 대잔치' },
-    { id: 'hd4', quote: '새벽 3시에 세운 계획은 국가 기밀급으로 다뤄야 한다', source: '오늘의 밈언 자체 제작', moodTags: ['계획음모'] },
-    { id: 'hd5', quote: '라면은 사실 국물이 메인이고 면은 곁들임이다', source: '아무말 대잔치', moodTags: ['배고픔'] },
-    { id: 'hd6', quote: '월요일은 일주일의 시작이 아니라 주말의 후유증이다', source: '직장인 어록', moodTags: ['월요일출근'] },
-    { id: 'hd7', quote: '스트레스는 눈에 안 보인다, 그러니까 없는 셈 치자', source: '오늘의 밈언 자체 제작', moodTags: ['스트레스짜증'] },
-    { id: 'hd8', quote: '야근하다 보면 어느새 출근 시간이다, 이건 야근이 아니라 그냥 출근 연장이다', source: '직장인 어록', moodTags: ['야근퇴근'] },
-    { id: 'hd9', quote: '사직서는 만병통치약이다, 부작용은 통장 잔고뿐이다', source: '직장인 어록', moodTags: ['월요일출근', '포기도전'] },
-    { id: 'hd12', quote: '배고픔은 착각이라던데, 그 착각 때문에 손이 이미 냉장고 문을 열고 있다', source: '아무말 대잔치', moodTags: ['배고픔'] },
+    { id: 'hd1', quote: '물고기는 물을 마시지 않는다, 물에 살 뿐이다', source: '아무말 대잔치', stockQuery: 'fish swimming underwater' },
+    { id: 'hd2', quote: '지구가 둥근 이유는 네모나면 모서리에서 넘어지기 때문이다', source: '아무말 대잔치', stockQuery: 'earth globe space' },
+    { id: 'hd3', quote: '고양이가 상자를 좋아하는 이유는 상자가 고양이를 좋아하기 때문이다', source: '아무말 대잔치', stockQuery: 'cat sitting in box' },
+    { id: 'hd4', quote: '새벽 3시에 세운 계획은 국가 기밀급으로 다뤄야 한다', source: '오늘의 밈언 자체 제작', moodTags: ['계획음모'], stockQuery: 'late night notebook writing' },
+    { id: 'hd5', quote: '라면은 사실 국물이 메인이고 면은 곁들임이다', source: '아무말 대잔치', moodTags: ['배고픔'], stockQuery: 'ramen noodles bowl' },
+    { id: 'hd6', quote: '월요일은 일주일의 시작이 아니라 주말의 후유증이다', source: '직장인 어록', moodTags: ['월요일출근'], stockQuery: 'monday alarm clock tired' },
+    { id: 'hd7', quote: '스트레스는 눈에 안 보인다, 그러니까 없는 셈 치자', source: '오늘의 밈언 자체 제작', moodTags: ['스트레스짜증'], stockQuery: 'frustrated person head in hands' },
+    { id: 'hd8', quote: '야근하다 보면 어느새 출근 시간이다, 이건 야근이 아니라 그냥 출근 연장이다', source: '직장인 어록', moodTags: ['야근퇴근'], stockQuery: 'office overtime night city' },
+    { id: 'hd9', quote: '사직서는 만병통치약이다, 부작용은 통장 잔고뿐이다', source: '직장인 어록', moodTags: ['월요일출근', '포기도전'], stockQuery: 'resignation letter desk' },
+    { id: 'hd12', quote: '배고픔은 착각이라던데, 그 착각 때문에 손이 이미 냉장고 문을 열고 있다', source: '아무말 대잔치', moodTags: ['배고픔'], stockQuery: 'open refrigerator kitchen' },
     {
       id: 'hd10', template: 'macro', mood: 'confused',
       topText: '월요일 아침 알람 소리', bottomText: '내 정신 상태',
@@ -183,15 +190,15 @@ const CONTENT = {
     },
   ],
   썰렁: [
-    { id: 'sr1', quote: '원숭이 엉덩이는 왜 빨갈까? 사과를 너무 많이 먹어서', source: '정통 아재개그' },
-    { id: 'sr2', quote: '바나나가 웃으면? 바나나킥', source: '정통 아재개그' },
-    { id: 'sr3', quote: '세상에서 가장 뜨거운 바다는? 열바다', source: '정통 아재개그' },
-    { id: 'sr4', quote: '닭이 우물에 빠지면? 닭죽', source: '정통 아재개그' },
-    { id: 'sr5', quote: '냉장고가 화나면? 냉장고 문다', source: '정통 아재개그', moodTags: ['스트레스짜증'] },
-    { id: 'sr6', quote: '도둑이 훔친 우유는? 도독 우유', source: '정통 아재개그' },
-    { id: 'sr7', quote: '스트레스가 심한 빵은? 스트레스빵(트레스빵)', source: '정통 아재개그', moodTags: ['스트레스짜증'] },
-    { id: 'sr8', quote: '출출할 때 먹으면 안 되는 과일은? 안출과일(안 되는 과일)... 이 아니라 그냥 아무거나 드세요', source: '정통 아재개그', moodTags: ['배고픔'] },
-    { id: 'sr9', quote: '배가 고프면 꼭 먹어야 하는 빵은? 배(고)빵... 그냥 아무 빵이나 드세요', source: '정통 아재개그', moodTags: ['배고픔'] },
+    { id: 'sr1', quote: '원숭이 엉덩이는 왜 빨갈까? 사과를 너무 많이 먹어서', source: '정통 아재개그', stockQuery: 'monkey portrait' },
+    { id: 'sr2', quote: '바나나가 웃으면? 바나나킥', source: '정통 아재개그', stockQuery: 'banana fruit' },
+    { id: 'sr3', quote: '세상에서 가장 뜨거운 바다는? 열바다', source: '정통 아재개그', stockQuery: 'ocean sea waves' },
+    { id: 'sr4', quote: '닭이 우물에 빠지면? 닭죽', source: '정통 아재개그', stockQuery: 'chicken farm' },
+    { id: 'sr5', quote: '냉장고가 화나면? 냉장고 문다', source: '정통 아재개그', moodTags: ['스트레스짜증'], stockQuery: 'refrigerator kitchen' },
+    { id: 'sr6', quote: '도둑이 훔친 우유는? 도독 우유', source: '정통 아재개그', stockQuery: 'milk carton glass' },
+    { id: 'sr7', quote: '스트레스가 심한 빵은? 스트레스빵(트레스빵)', source: '정통 아재개그', moodTags: ['스트레스짜증'], stockQuery: 'bread bakery' },
+    { id: 'sr8', quote: '출출할 때 먹으면 안 되는 과일은? 안출과일(안 되는 과일)... 이 아니라 그냥 아무거나 드세요', source: '정통 아재개그', moodTags: ['배고픔'], stockQuery: 'fresh fruit basket' },
+    { id: 'sr9', quote: '배가 고프면 꼭 먹어야 하는 빵은? 배(고)빵... 그냥 아무 빵이나 드세요', source: '정통 아재개그', moodTags: ['배고픔'], stockQuery: 'bread bakery pastry' },
   ],
   // 진지: 실존 인물 명언 + 위키피디아 실사진. moodTags를 넣어 스트레스/지침 등과 매칭되게 함.
   진지: [
