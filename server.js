@@ -18,9 +18,18 @@
 const express = require('express');
 const path = require('path');
 
-const { CONCEPT_ORDER, CONCEPT_META, CONTENT, classifyConcept, matchesMood } = require('./data/content');
+const {
+  CONCEPT_ORDER,
+  CONCEPT_META,
+  CONTENT,
+  classifyConcept,
+  matchesMood,
+  detectMoodCategories,
+  generateQuote,
+  pickStockQuery,
+} = require('./data/content');
 const { simpleText, basicCard, textCard, messageButton, skillResponse } = require('./lib/kakao');
-const { getSession, touch, markShown, resetConcept } = require('./lib/session');
+const { getSession, touch, markShown, markShownText, getShownTextsSet, resetConcept } = require('./lib/session');
 const { composeCardImage } = require('./lib/compose');
 const { sendSkillCallback } = require('./lib/kakaoCallback');
 
@@ -46,8 +55,27 @@ const CMD = {
 const imageCache = new Map(); // key: `${concept}:${id}` -> Buffer
 const inFlight = new Map(); // 동시에 같은 이미지가 여러 번 요청될 때 중복 합성 방지
 
+// 즉석에서 생성된 밈언(고정 id가 없는)을 잠깐 기억해두는 저장소.
+// /api/card/:concept/:id 라우트가 나중에 카카오 클라이언트로부터 썸네일 요청을 받을 때
+// 이 문구/이미지 검색어를 다시 찾아낼 수 있어야 하므로 필요함. 무한정 쌓이지 않도록
+// 오래된 것부터 정리한다 (생성된 밈언은 어차피 한 번 보여주고 나면 다시 볼 일이 거의 없음).
+const generatedItems = new Map(); // id -> item
+const GENERATED_ITEMS_CAP = 2000;
+
+function registerGeneratedItem(item) {
+  if (generatedItems.size >= GENERATED_ITEMS_CAP) {
+    const oldestId = generatedItems.keys().next().value;
+    const oldest = generatedItems.get(oldestId);
+    generatedItems.delete(oldestId);
+    if (oldest) imageCache.delete(`${oldest.concept}:${oldest.id}`);
+  }
+  generatedItems.set(item.id, item);
+}
+
 function findItem(concept, id) {
-  return (CONTENT[concept] || []).find((it) => it.id === id);
+  const curated = (CONTENT[concept] || []).find((it) => it.id === id);
+  if (curated) return curated;
+  return generatedItems.get(id);
 }
 
 async function getCardImage(concept, item) {
@@ -77,29 +105,48 @@ function thumbnailUrlFor(req, concept, item) {
   return `${baseUrl(req)}/api/card/${encodeURIComponent(concept)}/${encodeURIComponent(item.id)}.png`;
 }
 
+// 큐레이션된 항목이 아직 남아있어도, 이 확률로는 굳이 즉석 생성 쪽을 섞어서 보여준다.
+// (0.6 = 큐레이션 60%, 생성 40% - 손맛 좋은 고정 문구와 무한 변주가 둘 다 나오게 하는 비율)
+const CURATED_VS_GENERATED_RATIO = 0.6;
+
 function pickItem(session, concept) {
   const pool = CONTENT[concept] || [];
   const shown = session.shownIds[concept] || [];
 
-  // 사용자가 말한 기분/상황(session.mood)에 맞는 항목이 이 컨셉 안에 있는지 먼저,
-  // "이미 보여준 것" 필터를 적용하기 전에 통째로 확인합니다. (예: "창피했어" -> 창피부끄러움)
-  // 이렇게 해야 "비슷한 밈언 더"를 여러 번 눌러서 그 카테고리 항목을 다 보여준 뒤에도
-  // 엉뚱한 "범용"/랜덤 카테고리로 새지 않고, 같은 주제 안에서 돌려가며 계속 보여줄 수 있습니다.
+  // 사용자가 말한 기분/상황(session.mood)에 맞는 카테고리를 먼저 알아냅니다. (예: "창피했어" -> 창피부끄러움)
   if (session.mood) {
-    const moodPool = pool.filter((it) => matchesMood(it, session.mood));
-    if (moodPool.length) {
-      let candidates = moodPool.filter((it) => !shown.includes(it.id));
-      if (candidates.length === 0) {
-        // 이 기분 카테고리 항목을 이미 다 보여줬으면, 컨셉 전체가 아니라 이 카테고리 안에서만
-        // "본 것"을 리셋하고 다시 돌려가며 보여줍니다 (엉뚱한 주제로 새지 않도록).
-        session.shownIds[concept] = shown.filter((id) => !moodPool.some((it) => it.id === id));
-        candidates = moodPool;
+    const categories = detectMoodCategories(session.mood);
+
+    if (categories.length) {
+      const category = categories[0];
+      const moodPool = pool.filter((it) => matchesMood(it, session.mood));
+      const unseenCurated = moodPool.filter((it) => !shown.includes(it.id));
+
+      // 큐레이션이 남아있으면 확률적으로 그걸 먼저 보여주고, 그 외엔(또는 다 봤으면) 즉석 생성.
+      // "비슷한 밈언 더"를 아무리 눌러도 몇 개 안 되는 고정 문구만 뱅뱅 도는 대신,
+      // frame x 상황조각 x 펀치라인조각 조합으로 매번 새로운 문장을 만들어서 사실상
+      // 반복이 거의 안 보이게 합니다 (그래도 같은 카테고리 안이라 맥락은 벗어나지 않음).
+      if (unseenCurated.length > 0 && Math.random() < CURATED_VS_GENERATED_RATIO) {
+        return unseenCurated[Math.floor(Math.random() * unseenCurated.length)];
       }
-      return candidates[Math.floor(Math.random() * candidates.length)];
+
+      const shownTexts = getShownTextsSet(session, concept);
+      const quote = generateQuote(category, session.mood, shownTexts);
+      markShownText(session, concept, quote);
+      const generated = {
+        id: `gen-${concept}-${category}-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+        concept,
+        quote,
+        source: '오늘의 밈언 (즉석 생성)',
+        moodTags: [category],
+        stockQuery: pickStockQuery(category),
+      };
+      registerGeneratedItem(generated);
+      return generated;
     }
 
-    // 이 컨셉 안에 구체적인 카테고리와 맞는 항목이 아예 없을 때만(=아직 못 알아듣는 표현이어도),
-    // "배고픔" 얘기에 "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 합니다.
+    // 카테고리를 전혀 못 알아들었을 때만(=아직 학습 안 된 표현이어도), "배고픔" 얘기에
+    // "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 합니다.
     // 그래서 어떤 상황에 갖다 붙여도 안전한 "범용" 태그 항목을 우선 사용합니다.
     const universalPool = pool.filter((it) => it.moodTags && it.moodTags.includes('범용'));
     if (universalPool.length) {
@@ -156,6 +203,13 @@ function conceptAnswerResponse(req, session, concept) {
   const item = pickItem(session, concept);
   markShown(session, concept, item.id);
   const meta = CONCEPT_META[concept];
+
+  // 카카오 클라이언트는 이 스킬 응답을 받은 "뒤에" 썸네일 이미지 URL(/api/card/...)을 따로
+  // 요청합니다. 그때 가서야 위키피디아/스톡 사진 다운로드를 시작하면 시간이 빠듯하므로,
+  // 텍스트 응답을 준비하는 지금 미리(비동기로, 기다리지 않고) 이미지 합성을 시작해둡니다.
+  // 실패해도 여기서는 무시 - 실제 요청이 오면 getCardImage()가 같은 캐시/inFlight를 보고
+  // 다시 시도하거나(이미 실패해 캐시되지 않았으므로) 정상적으로 재시도합니다.
+  getCardImage(concept, item).catch(() => {});
 
   const card = basicCard({
     title: `${meta.emoji} ${concept} 밈언`,
