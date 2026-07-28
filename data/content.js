@@ -79,6 +79,34 @@ const CONTENT = {
     { id: 'jj14', quote: '다이어트는 내일부터, 오늘은 준비운동 기간이다', source: '국룰 짤방 명언', moodTags: ['다이어트', '살', '운동'] },
     { id: 'jj15', quote: '퇴 사', source: '오늘의 밈언 자체 제작 · 직장인 만국 공통 정답', moodTags: ['회사', '스트레스', '상사', '야근', '직장', '뭐해야', '뭘해야'] },
     { id: 'jj16', quote: '그만두는 상상은 무료입니다', source: '직장인 어록', moodTags: ['회사', '그만', '상사', '직장'] },
+    // 아래부터는 "진짜 밈 포맷"(이모지+레이아웃으로 직접 그린 밈, 저작권 프리) 항목들입니다.
+    {
+      id: 'jj17', template: 'macro', mood: 'shock',
+      topText: '팀장이 "잠깐 얘기 좀 할까?"', bottomText: '나 (심장 쿵)',
+      quote: '팀장이 "잠깐 얘기 좀 할까?" 할 때의 내 심장', source: '오늘의 밈언 (자체 제작 밈)',
+      moodTags: ['회사', '상사', '스트레스', '긴장'],
+    },
+    {
+      id: 'jj18', template: 'macro', mood: 'happy',
+      topText: '금요일 퇴근 5분 전', bottomText: '전 직원 텔레파시 일치',
+      quote: '금요일 퇴근 5분 전, 전 직원의 텔레파시', source: '오늘의 밈언 (자체 제작 밈)',
+      moodTags: ['퇴근', '금요일', '회사'],
+    },
+    {
+      id: 'jj19', template: 'compare', rejectText: '지금 당장 다이어트 시작', acceptText: '일단 치킨 먹고 내일부터',
+      quote: '다이어트 vs 일단 치킨', source: '오늘의 밈언 (자체 제작 밈)',
+      moodTags: ['다이어트', '살', '배고', '출출'],
+    },
+    {
+      id: 'jj20', template: 'compare', rejectText: '할 일 지금 끝내기', acceptText: '일단 좀 눕기',
+      quote: '해야 할 일 vs 일단 눕기', source: '오늘의 밈언 (자체 제작 밈)',
+      moodTags: ['귀찮', '지침', '할일', '미루'],
+    },
+    {
+      id: 'jj21', template: 'brain', quote: '스트레스 해소 단계 (뇌 확장 밈)', source: '오늘의 밈언 (자체 제작 밈)',
+      stages: ['그냥 참는다', '커피를 마신다', '동료한테 하소연한다', '사직서를 쓴다 (진짜 안 냄)'],
+      moodTags: ['스트레스', '회사', '짜증', '화남'],
+    },
   ],
   // 황당: 존잼과 마찬가지로 전부 즉시 렌더링되는 컬러 카드입니다.
   황당: [
@@ -91,6 +119,17 @@ const CONTENT = {
     { id: 'hd7', quote: '스트레스는 눈에 안 보인다, 그러니까 없는 셈 치자', source: '오늘의 밈언 자체 제작', moodTags: ['스트레스', '짜증'] },
     { id: 'hd8', quote: '야근하다 보면 어느새 출근 시간이다, 이건 야근이 아니라 그냥 출근 연장이다', source: '직장인 어록', moodTags: ['야근', '회사'] },
     { id: 'hd9', quote: '사직서는 만병통치약이다, 부작용은 통장 잔고뿐이다', source: '직장인 어록', moodTags: ['회사', '스트레스', '상사', '그만'] },
+    {
+      id: 'hd10', template: 'macro', mood: 'confused',
+      topText: '월요일 아침 알람 소리', bottomText: '내 정신 상태',
+      quote: '월요일 아침 알람 소리를 들은 내 정신 상태', source: '오늘의 밈언 (자체 제작 밈)',
+      moodTags: ['월요일', '출근', '피곤'],
+    },
+    {
+      id: 'hd11', template: 'brain', quote: '점심 메뉴 고민 단계 (뇌 확장 밈)', source: '오늘의 밈언 (자체 제작 밈)',
+      stages: ['아무거나 먹자', '어제 뭐 먹었더라', '결국 어제랑 똑같은 거', '그냥 라면 먹는다'],
+      moodTags: ['배고', '출출', '점심'],
+    },
   ],
   썰렁: [
     { id: 'sr1', quote: '원숭이 엉덩이는 왜 빨갈까? 사과를 너무 많이 먹어서', source: '정통 아재개그' },
