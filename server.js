@@ -27,6 +27,7 @@ const {
   detectMoodCategories,
   generateQuote,
   pickStockQuery,
+  getAllStockQueries,
 } = require('./data/content');
 const { simpleText, basicCard, textCard, messageButton, skillResponse } = require('./lib/kakao');
 const { getSession, touch, markShown, markShownText, getShownTextsSet, resetConcept } = require('./lib/session');
@@ -50,6 +51,30 @@ const CMD = {
   OTHER_CONCEPT: '다른 컨셉',
   RESET_MOOD: '다른 기분/상황',
 };
+
+// 오픈채팅방(그룹방)에서 버튼을 누르면, 카카오가 "@오늘의 밈언 " 같은 멘션을 자동으로
+// 앞에 붙여서 그대로 다시 웹훅으로 보내주는 경우가 있습니다(1:1 채팅에는 멘션이 안 붙습니다).
+// 이걸 그대로 CONCEPT_ORDER.includes(utterance)나 utterance === CMD.MORE_SAME 같은
+// 정확히 일치(===) 비교에 넣으면 절대 매치가 안 돼서 - "비슷한 밈언 더"를 눌러도 그 분기를
+// 타지 못하고 엉뚱하게 "컨셉을 못 알아들었다" 분기로 빠지면서 다시 텐션 선택 화면이 뜨고,
+// 심지어 그 과정에서 session.mood가 이 지저분한 문자열로 덮어써져서 원래 기분/상황
+// (예: "스트레스 받았어")까지 조용히 사라져버립니다. 그래서 버튼/컨셉 매칭에 쓰기 전에
+// 반드시 이 멘션과 이모지를 먼저 떼어내고 비교해야 합니다.
+const BOT_NAME = '오늘의 밈언';
+// 이름 안의 공백은 "필수"가 아니라 "있을 수도 없을 수도" 있는 걸로 취급해야 하므로,
+// 공백을 뺀 순수 글자들 사이사이에 \s*(있어도 없어도 됨)를 끼워 넣는다.
+// 이렇게 해야 "@오늘의 밈언", "@오늘의밈언" 둘 다 정확히 잡아낸다.
+const BOT_NAME_CHARS = BOT_NAME.replace(/\s+/g, '').split('');
+const MENTION_PATTERN = new RegExp('^@?\\s*' + BOT_NAME_CHARS.join('\\s*') + '\\s*');
+// 버튼 라벨에 쓰인 이모지들(😆🤔🤪😴🏛️🔁🔀🆕 등)을 광범위하게 걸러내는 정규식
+const EMOJI_PATTERN = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}]/gu;
+
+function normalizeUtterance(raw) {
+  let t = (raw || '').trim();
+  t = t.replace(MENTION_PATTERN, '');
+  t = t.replace(EMOJI_PATTERN, '');
+  return t.trim();
+}
 
 // ---- 완성된 이미지 캐시 (프로세스 메모리, 최초 1회만 합성) ---------------------
 const imageCache = new Map(); // key: `${concept}:${id}` -> Buffer
@@ -280,9 +305,16 @@ app.post('/skill', verifySkillSecret, async (req, res) => {
     return res.sendStatus(200);
   }
 
-  const utterance = (d.content || '').trim();
+  const rawUtterance = (d.content || '').trim();
+  // 오픈채팅방에서 버튼을 누르면 "@오늘의 밈언 " 멘션과 버튼 라벨의 이모지가 그대로
+  // 다시 들어올 수 있어서, 실제 비교/저장은 전부 이 "정리된" 버전으로 합니다.
+  const utterance = normalizeUtterance(rawUtterance);
   const userId = d.botUserKey || 'anonymous';
   const callbackToken = d.callbackToken;
+
+  if (rawUtterance !== utterance) {
+    console.log(`[skill] 멘션/이모지 제거: "${rawUtterance}" -> "${utterance}"`);
+  }
 
   // 웹훅은 여기서 바로 ack. 실제 답장은 아래에서 콜백 API로 비동기 전송합니다.
   res.sendStatus(200);
@@ -343,6 +375,63 @@ app.post('/skill', verifySkillSecret, async (req, res) => {
   }
 });
 
+// ---- 이미지 캐시 예열 (서버 기동 시 백그라운드로 실행, 요청을 막지 않음) -----------
+//
+// 핵심 발견: /api/card/... URL을 사람이 브라우저로 직접 열어보면 사진이든 색깔카드든
+// 잘 뜬다 -> 이미지 합성 로직 자체는 정상. 그런데 실제 카카오톡 안에서는 여전히 이미지가
+// 하나도 안 보인다 -> 문제는 "카카오(또는 카카오톡 클라이언트)가 썸네일 이미지를 가져갈 때
+// 허용하는 시간"이 사람이 나중에 눈으로 확인하는 것보다 훨씬 촉박하다는 것.
+// 즉, 그 항목이 "그 순간 처음 요청되는(=아직 캐시에 없는) 콜드 상태"이면 위키/스톡 사진
+// 다운로드가 몇 초 걸리는데, 카카오 쪽은 그 몇 초를 기다려주지 않고 이미지 없이 렌더링해버리는
+// 것으로 보인다. 따라서 근본적인 해법은 "요청이 오는 순간 얼마나 빠른가"가 아니라,
+// "애초에 콜드 상태인 항목이 하나도 없게" 만드는 것이다.
+//
+// 그래서 서버가 켜지자마자(트래픽을 막지 않고 백그라운드로):
+// 1) 큐레이션된 항목(전체 존잼/황당/썰렁/진지/철학)을 전부 한 번씩 합성해서 imageCache를 채운다.
+// 2) 즉석 생성기가 쓰는 스톡 검색어 풀(카테고리당 2개씩)을 전부 한 번씩 검색+다운로드해서
+//    stock.js/compose.js의 캐시를 채운다 - 그러면 어떤 문장이 새로 생성되든, 그 카테고리의
+//    배경 사진은 이미 캐시에 있으므로 네트워크 호출 없이 즉시 합성된다.
+async function warmUpImageCaches() {
+  console.log('[warmup] 이미지 캐시 예열 시작...');
+  const started = Date.now();
+  let ok = 0;
+  let fail = 0;
+
+  const curatedTasks = [];
+  for (const concept of CONCEPT_ORDER) {
+    for (const item of CONTENT[concept] || []) {
+      curatedTasks.push({ concept, item });
+    }
+  }
+
+  const stockQueryTasks = getAllStockQueries().map((q) => ({
+    concept: '존잼', // 아무 컨셉이나 상관없음 - 검색어/이미지 다운로드 캐시만 채우면 되므로
+    item: { quote: '', source: '', stockQuery: q },
+  }));
+
+  const tasks = [...curatedTasks, ...stockQueryTasks];
+
+  // 한꺼번에 수십~수백 개를 동시에 쏘면 Openverse/위키피디아 쪽에서 rate limit에 걸릴 수
+  // 있으므로, 5개씩 묶어서 순차적으로 예열한다.
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < tasks.length; i += BATCH_SIZE) {
+    const batch = tasks.slice(i, i + BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(({ concept, item }) =>
+        item.id ? getCardImage(concept, item) : composeCardImage(concept, item, CONCEPT_META[concept])
+      )
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') ok++;
+      else fail++;
+    }
+  }
+
+  console.log(`[warmup] 이미지 캐시 예열 완료: 성공 ${ok} / 실패 ${fail} (${Date.now() - started}ms)`);
+}
+
 app.listen(PORT, () => {
   console.log(`오늘의 밈언 스킬 서버 실행 중: http://localhost:${PORT}`);
+  // 서버를 켜는 것 자체는 예열이 끝날 때까지 기다리지 않는다 - 웹훅은 예열 중에도 정상 응답한다.
+  warmUpImageCaches().catch((err) => console.error('[warmup] 예열 중 오류:', err));
 });
