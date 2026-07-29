@@ -134,9 +134,16 @@ function thumbnailUrlFor(req, concept, item) {
 // (0.6 = 큐레이션 60%, 생성 40% - 손맛 좋은 고정 문구와 무한 변주가 둘 다 나오게 하는 비율)
 const CURATED_VS_GENERATED_RATIO = 0.6;
 
+// 즉석 생성기(GENERATOR_FRAMES 기반)는 "존잼/황당/썰렁"처럼 가벼운 유머 톤일 때만 씁니다.
+// "진지"와 "철학"은 실존 인물의 실제 명언 + 위키피디아 초상 사진을 보여주는 게 컨셉의 핵심이라서,
+// 절대로 즉석 생성된 유머 문구가 대신 나오면 안 됩니다(예전엔 이 구분이 없어서 "철학"을 눌렀는데
+// 실존 철학자 명언 대신 "안 아픈 척 걷는 연기력" 같은 유머 문구가 튀어나오는 버그가 있었음).
+const GENERATABLE_CONCEPTS = new Set(['존잼', '황당', '썰렁']);
+
 function pickItem(session, concept) {
   const pool = CONTENT[concept] || [];
   const shown = session.shownIds[concept] || [];
+  const canGenerate = GENERATABLE_CONCEPTS.has(concept);
 
   // 사용자가 말한 기분/상황(session.mood)에 맞는 카테고리를 먼저 알아냅니다. (예: "창피했어" -> 창피부끄러움)
   if (session.mood) {
@@ -147,32 +154,40 @@ function pickItem(session, concept) {
       const moodPool = pool.filter((it) => matchesMood(it, session.mood));
       const unseenCurated = moodPool.filter((it) => !shown.includes(it.id));
 
-      // 큐레이션이 남아있으면 확률적으로 그걸 먼저 보여주고, 그 외엔(또는 다 봤으면) 즉석 생성.
-      // "비슷한 밈언 더"를 아무리 눌러도 몇 개 안 되는 고정 문구만 뱅뱅 도는 대신,
-      // frame x 상황조각 x 펀치라인조각 조합으로 매번 새로운 문장을 만들어서 사실상
-      // 반복이 거의 안 보이게 합니다 (그래도 같은 카테고리 안이라 맥락은 벗어나지 않음).
-      if (unseenCurated.length > 0 && Math.random() < CURATED_VS_GENERATED_RATIO) {
-        return unseenCurated[Math.floor(Math.random() * unseenCurated.length)];
+      if (unseenCurated.length > 0) {
+        // 큐레이션이 남아있으면: 존잼/황당/썰렁은 확률적으로 즉석 생성과 섞어서 보여주고
+        // (아래로 안 빠지고 여기서 바로 return), 진지/철학은 즉석 생성을 아예 안 하므로
+        // 무조건 큐레이션(실존 인물 명언)만 사용합니다.
+        if (!canGenerate || Math.random() < CURATED_VS_GENERATED_RATIO) {
+          return unseenCurated[Math.floor(Math.random() * unseenCurated.length)];
+        }
       }
 
-      const shownTexts = getShownTextsSet(session, concept);
-      const quote = generateQuote(category, session.mood, shownTexts);
-      markShownText(session, concept, quote);
-      const generated = {
-        id: `gen-${concept}-${category}-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-        concept,
-        quote,
-        source: '오늘의 밈언 (즉석 생성)',
-        moodTags: [category],
-        stockQuery: pickStockQuery(category),
-      };
-      registerGeneratedItem(generated);
-      return generated;
+      if (canGenerate) {
+        // "비슷한 밈언 더"를 아무리 눌러도 몇 개 안 되는 고정 문구만 뱅뱅 도는 대신,
+        // frame x 상황조각 x 펀치라인조각 조합으로 매번 새로운 문장을 만들어서 사실상
+        // 반복이 거의 안 보이게 합니다 (그래도 같은 카테고리 안이라 맥락은 벗어나지 않음).
+        const shownTexts = getShownTextsSet(session, concept);
+        const quote = generateQuote(category, session.mood, shownTexts);
+        markShownText(session, concept, quote);
+        const generated = {
+          id: `gen-${concept}-${category}-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+          concept,
+          quote,
+          source: '오늘의 밈언 (즉석 생성)',
+          moodTags: [category],
+          stockQuery: pickStockQuery(category),
+        };
+        registerGeneratedItem(generated);
+        return generated;
+      }
+      // 진지/철학인데 이 카테고리에 맞는 큐레이션 명언이 하나도 없거나 이미 다 보여줬으면,
+      // 즉석 생성으로 새지 않고 아래 "범용" 태그 풀(그래도 실존 인물 명언)로 넘어갑니다.
     }
 
-    // 카테고리를 전혀 못 알아들었을 때만(=아직 학습 안 된 표현이어도), "배고픔" 얘기에
-    // "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 합니다.
-    // 그래서 어떤 상황에 갖다 붙여도 안전한 "범용" 태그 항목을 우선 사용합니다.
+    // 카테고리를 전혀 못 알아들었을 때, 또는 진지/철학인데 매칭되는 큐레이션이 소진됐을 때:
+    // "배고픔" 얘기에 "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 하므로,
+    // 어떤 상황에 갖다 붙여도 안전한 "범용" 태그 항목을 우선 사용합니다.
     const universalPool = pool.filter((it) => it.moodTags && it.moodTags.includes('범용'));
     if (universalPool.length) {
       let candidates = universalPool.filter((it) => !shown.includes(it.id));
