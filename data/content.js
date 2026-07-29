@@ -119,7 +119,17 @@ const MOOD_TRIGGERS = {
   혐오지겨움: ['혐오', '역겹', '역겨워', '역겨웠', '지겹', '지겨워', '지겨웠', '넌더리'],
 
   // --- 수치심/자의식 계열 ---
-  창피부끄러움: ['창피', '부끄럽', '부끄러워', '부끄러운', '부끄러웠', '쪽팔', '민망', '흑역사'],
+  // '창피/부끄럽' 같은 "감정 단어"뿐 아니라, 그 감정을 유발하는 "상황 단어"(넘어짐, 실수 등)도
+  // 함께 넣어둔다 - 사용자가 "창피하다"고 직접 말하지 않고 "길 가다 넘어졌어"처럼 상황만
+  // 설명해도 맥락을 알아채야 하기 때문. 지/져/졌(예: 넘어지/넘어져/넘어졌)는 서로 다른
+  // 활용형이라 각각 등록해야 한다(지+어→져, 지+었→졌으로 축약되면서 "지"가 사라짐).
+  창피부끄러움: [
+    '창피', '부끄럽', '부끄러워', '부끄러운', '부끄러웠', '쪽팔', '민망', '흑역사',
+    '넘어지', '넘어져', '넘어졌',
+    '자빠지', '자빠져', '자빠졌',
+    '미끄러지', '미끄러져', '미끄러졌',
+    '헛디디', '헛디뎌', '헛디뎠',
+  ],
   죄책감후회: ['죄책감', '미안', '후회', '자괴감'],
 
   // --- 무기력/피로 계열 ---
@@ -590,6 +600,19 @@ function pickStockQuery(category) {
   return pick(pool && pool.length ? pool : DEFAULT_STOCK_QUERIES);
 }
 
+// 즉석 생성기가 쓸 수 있는 모든 스톡 검색어를 중복 없이 모아서 반환.
+// 서버 기동 시 이 검색어들을 미리 한 번씩 검색+다운로드해서 캐시를 "예열"해두는 데 쓴다 -
+// 그래야 사용자가 실제로 그 카테고리의 즉석 밈언을 받을 때 네트워크 호출 없이 캐시에서
+// 바로 합성할 수 있다 (카카오 쪽이 썸네일을 가져갈 때 기다려주는 시간이 매우 짧을 수 있어서,
+// "그때 가서 처음 다운로드"로는 결국 늦을 수 있기 때문).
+function getAllStockQueries() {
+  const set = new Set(DEFAULT_STOCK_QUERIES);
+  for (const category of Object.keys(STOCK_QUERY_POOL)) {
+    for (const q of STOCK_QUERY_POOL[category]) set.add(q);
+  }
+  return Array.from(set);
+}
+
 module.exports = {
   CONCEPT_ORDER,
   CONCEPT_META,
@@ -599,4 +622,5 @@ module.exports = {
   detectMoodCategories,
   generateQuote,
   pickStockQuery,
+  getAllStockQueries,
 };
