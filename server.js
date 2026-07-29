@@ -185,15 +185,28 @@ function pickItem(session, concept) {
       // 즉석 생성으로 새지 않고 아래 "범용" 태그 풀(그래도 실존 인물 명언)로 넘어갑니다.
     }
 
-    // 카테고리를 전혀 못 알아들었을 때, 또는 진지/철학인데 매칭되는 큐레이션이 소진됐을 때:
-    // "배고픔" 얘기에 "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 하므로,
-    // 어떤 상황에 갖다 붙여도 안전한 "범용" 태그 항목을 우선 사용합니다.
-    const universalPool = pool.filter((it) => it.moodTags && it.moodTags.includes('범용'));
-    if (universalPool.length) {
-      let candidates = universalPool.filter((it) => !shown.includes(it.id));
+    if (canGenerate) {
+      // 카테고리를 전혀 못 알아들었을 때만(=아직 학습 안 된 표현이어도), "배고픔" 얘기에
+      // "돈 절약" 개그처럼 완전히 딴 얘기가 튀어나오는 것만은 막아야 하므로, 존잼/황당/썰렁은
+      // 어떤 상황에 갖다 붙여도 안전한 "범용" 태그 항목으로 좁혀서 사용합니다.
+      const universalPool = pool.filter((it) => it.moodTags && it.moodTags.includes('범용'));
+      if (universalPool.length) {
+        let candidates = universalPool.filter((it) => !shown.includes(it.id));
+        if (candidates.length === 0) {
+          session.shownIds[concept] = shown.filter((id) => !universalPool.some((it) => it.id === id));
+          candidates = universalPool;
+        }
+        return candidates[Math.floor(Math.random() * candidates.length)];
+      }
+    } else {
+      // 진지/철학은 카테고리 정확 매칭이 안 되더라도 전부 "실존 인물의 진짜 명언"이라서
+      // 소재 이탈 걱정이 적습니다. 그래서 "범용" 태그 2~3개로만 좁히지 않고, 그 컨셉의 명언
+      // 전체를 골고루 순환시켜 다양성을 확보합니다 (안 그러면 범용 태그 붙은 소크라테스
+      // "너 자신을 알라" 같은 문구만 계속 반복돼서 다양성이 심하게 떨어집니다).
+      let candidates = pool.filter((it) => !shown.includes(it.id));
       if (candidates.length === 0) {
-        session.shownIds[concept] = shown.filter((id) => !universalPool.some((it) => it.id === id));
-        candidates = universalPool;
+        resetConcept(session, concept);
+        candidates = pool;
       }
       return candidates[Math.floor(Math.random() * candidates.length)];
     }
